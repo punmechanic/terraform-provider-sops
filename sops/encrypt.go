@@ -65,10 +65,12 @@ func ensureNoMetadata(branch mozillasops.TreeBranch) error {
 }
 
 func Encrypt(opts EncryptOpts, fileBytes []byte) (encryptedFile []byte, err error) {
-
 	branches, err := opts.InputStore.LoadPlainFile(fileBytes)
 	if err != nil {
 		return nil, common.NewExitError(fmt.Sprintf("Error unmarshalling file: %tfSops", err), codes.CouldNotReadInputFile)
+	}
+	if len(branches) == 0 {
+		return nil, common.NewExitError(fmt.Sprintln("provided content was empty"), codes.CouldNotReadInputFile)
 	}
 	if err := ensureNoMetadata(branches[0]); err != nil {
 		return nil, common.NewExitError(err, codes.FileAlreadyEncrypted)
