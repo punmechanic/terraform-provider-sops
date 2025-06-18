@@ -10,10 +10,12 @@ import (
 	mozillasops "go.mozilla.org/sops/v3"
 	"go.mozilla.org/sops/v3/age"
 	"go.mozilla.org/sops/v3/logging"
+
 	//"go.mozilla.org/sops/v3/azkv"
 	"go.mozilla.org/sops/v3/cmd/sops/codes"
 	"go.mozilla.org/sops/v3/cmd/sops/common"
 	"go.mozilla.org/sops/v3/gcpkms"
+
 	//"go.mozilla.org/sops/v3/hcvault"
 	"go.mozilla.org/sops/v3/keys"
 	"go.mozilla.org/sops/v3/keyservice"
@@ -67,7 +69,7 @@ func ensureNoMetadata(branch mozillasops.TreeBranch) error {
 func Encrypt(opts EncryptOpts, fileBytes []byte) (encryptedFile []byte, err error) {
 	branches, err := opts.InputStore.LoadPlainFile(fileBytes)
 	if err != nil {
-		return nil, common.NewExitError(fmt.Sprintf("Error unmarshalling file: %tfSops", err), codes.CouldNotReadInputFile)
+		return nil, common.NewExitError(fmt.Sprintf("Error unmarshalling file: %s", err), codes.CouldNotReadInputFile)
 	}
 	if len(branches) == 0 {
 		return nil, common.NewExitError(fmt.Sprintln("provided content was empty"), codes.CouldNotReadInputFile)
@@ -94,7 +96,7 @@ func Encrypt(opts EncryptOpts, fileBytes []byte) (encryptedFile []byte, err erro
 	}
 	dataKey, errs := tree.GenerateDataKeyWithKeyServices(opts.KeyServices)
 	if len(errs) > 0 {
-		err = fmt.Errorf("Could not generate data key: %tfSops", errs)
+		err = fmt.Errorf("Could not generate data key: %s", errs)
 		return nil, err
 	}
 
@@ -109,7 +111,7 @@ func Encrypt(opts EncryptOpts, fileBytes []byte) (encryptedFile []byte, err erro
 
 	encryptedFile, err = opts.OutputStore.EmitEncryptedFile(tree)
 	if err != nil {
-		return nil, common.NewExitError(fmt.Sprintf("Could not marshal tree: %tfSops", err), codes.ErrorDumpingTree)
+		return nil, common.NewExitError(fmt.Sprintf("Could not marshal tree: %s", err), codes.ErrorDumpingTree)
 	}
 	return
 }
@@ -138,7 +140,7 @@ func GetKmsConf(d *schema.ResourceData) (KmsConf, error) {
 func GetAgeConf(d *schema.ResourceData) (string, error) {
 	ageConf := d.Get("age").(map[string]interface{})
 	ageKey := ageConf["key"]
-	log.Debugf("ageKey:%tfSops", ageKey)
+	log.Debugf("ageKey: %s", ageKey)
 	if ageKey == nil {
 		return "", fmt.Errorf("age key is not set")
 	}
@@ -160,7 +162,7 @@ func GetEncryptionKey(d *schema.ResourceData, encType string) (interface{}, erro
 		}
 		return ageConf, nil
 	}
-	return nil, fmt.Errorf("failed to recognize encType:%tfSops", encType)
+	return nil, fmt.Errorf("failed to recognize encType: %s", encType)
 }
 
 func KeyGroups(d *schema.ResourceData, encType string, config *EncryptConfig) ([]mozillasops.KeyGroup, error) {
