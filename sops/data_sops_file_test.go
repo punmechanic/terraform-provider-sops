@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
@@ -20,7 +21,7 @@ func TestDataSourceSopsFile_basic(t *testing.T) {
 	}
 	config := fmt.Sprintf(configTestDataSourceSopsFile_basic, wd)
 	resource.UnitTest(t, resource.TestCase{
-		Providers: testAccProviders,
+		ProtoV5ProviderFactories: testAccProviders,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -47,7 +48,7 @@ func TestDataSourceSopsFile_nested(t *testing.T) {
 	}
 	config := fmt.Sprintf(configTestDataSourceSopsFile_nested, wd)
 	resource.UnitTest(t, resource.TestCase{
-		Providers: testAccProviders,
+		ProtoV5ProviderFactories: testAccProviders,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -73,7 +74,7 @@ func TestDataSourceSopsFile_raw(t *testing.T) {
 	}
 	config := fmt.Sprintf(configTestDataSourceSopsFile_raw, wd)
 	resource.UnitTest(t, resource.TestCase{
-		Providers: testAccProviders,
+		ProtoV5ProviderFactories: testAccProviders,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -97,7 +98,7 @@ func TestDataSourceSopsFile_simplelist(t *testing.T) {
 	}
 	config := fmt.Sprintf(configTestDataSourceSopsFile_simplelist, wd)
 	resource.UnitTest(t, resource.TestCase{
-		Providers: testAccProviders,
+		ProtoV5ProviderFactories: testAccProviders,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -122,7 +123,7 @@ func TestDataSourceSopsFile_complexlist(t *testing.T) {
 	}
 	config := fmt.Sprintf(configTestDataSourceSopsFile_complexlist, wd)
 	resource.UnitTest(t, resource.TestCase{
-		Providers: testAccProviders,
+		ProtoV5ProviderFactories: testAccProviders,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -149,7 +150,7 @@ func TestDataSourceSopsFile_json(t *testing.T) {
 	}
 	config := fmt.Sprintf(configTestDataSourceSopsFile_json, wd)
 	resource.UnitTest(t, resource.TestCase{
-		Providers: testAccProviders,
+		ProtoV5ProviderFactories: testAccProviders,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -162,4 +163,8 @@ func TestDataSourceSopsFile_json(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestFileDataSourceTypeConformity(*testing.T) {
+	var _ datasource.DataSource = &FileDataSource{}
 }

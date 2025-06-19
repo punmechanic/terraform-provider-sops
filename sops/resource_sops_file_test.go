@@ -1,29 +1,33 @@
 package sops
 
 import (
-	"context"
+	"regexp"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-var sourceFile = resourceSourceFile()
+const configTestResourceSopsFile_emptyContentYaml = `
+resource "sops_file" "x" {
+  content  = ""
+  filename = "access-keys.yml"
+  kms {
+	arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+  }
+}`
 
 // Fixes a bug where sops_file would crash if filename was set to .yml and content was empty string.
 func TestResourceSopsFile_ReturnsCouldNotReadInputFileIfYmlFileIsEmpty(t *testing.T) {
-	var instanceState terraform.InstanceState
-	data := sourceFile.Data(&instanceState)
-	data.Set("content", "")
-	data.Set("filename", "access-keys.yml")
-
-	ds := sourceFile.CreateContext(context.Background(), data, &EncryptConfig{})
-	if !ds.HasError() {
-		t.Error("No errors found, but expected exactly one")
-	}
-
-	first := ds[0]
-	expected := "provided content was empty\n"
-	if first.Summary != expected {
-		t.Errorf("Error %d Summary was %q instead of %q", 0, first.Summary, expected)
-	}
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV5ProviderFactories: testAccProviders,
+		Steps: []resource.TestStep{
+			{
+				Config: configTestResourceSopsFile_emptyContentYaml,
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("resource.sops_file.x", "content", ""),
+				),
+				ExpectError: regexp.MustCompile("provided content was empty"),
+			},
+		},
+	})
 }

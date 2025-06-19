@@ -2,7 +2,6 @@ package sops
 
 type EncryptConfig struct {
 	Kms KmsConf
-	Age string
 }
 type KmsConf struct {
 	ARN     string
@@ -10,5 +9,5 @@ type KmsConf struct {
 }
 
 func (c *KmsConf) IsConfigured() bool {
-	return len(c.ARN) > 0 && len(c.Profile) > 0
+	return len(c.ARN) > 0
 }

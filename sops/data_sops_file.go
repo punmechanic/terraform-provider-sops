@@ -1,36 +1,55 @@
 package sops
 
 import (
+	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	tfpath "github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func dataSourceFile() *schema.Resource {
-	return &schema.Resource{
-		Read: dataSourceFileRead,
+type FileDataSource struct {
+	ID         types.String `tfsdk:"id"`
+	InputType  types.String `tfsdk:"input_type"`
+	SourceFile types.String `tfsdk:"source_file"`
+	Raw        types.String `tfsdk:"raw"`
+	Data       types.Map    `tfsdk:"data"`
+}
 
-		Schema: map[string]*schema.Schema{
-			"input_type": {
-				Type:     schema.TypeString,
+type FileDataSourceModel struct {
+	ID         string
+	InputType  string
+	SourceFile string
+	Raw        string
+	Data       map[string]string
+}
+
+func (fds FileDataSource) Metadata(_ context.Context, _ datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = "sops_file"
+}
+
+func (fds FileDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed: true,
+			},
+			"input_type": schema.StringAttribute{
 				Optional: true,
-				ForceNew: true,
 			},
-			"source_file": {
-				Type:     schema.TypeString,
+			"source_file": schema.StringAttribute{
 				Required: true,
-				ForceNew: true,
 			},
-
-			"data": &schema.Schema{
-				Type:      schema.TypeMap,
-				Computed:  true,
-				Sensitive: true,
+			"data": schema.MapAttribute{
+				Computed:    true,
+				Sensitive:   true,
+				ElementType: types.StringType,
 			},
-			"raw": &schema.Schema{
-				Type:      schema.TypeString,
+			"raw": schema.StringAttribute{
 				Computed:  true,
 				Sensitive: true,
 			},
@@ -38,18 +57,36 @@ func dataSourceFile() *schema.Resource {
 	}
 }
 
-func dataSourceFileRead(d *schema.ResourceData, meta interface{}) error {
-	sourceFile := d.Get("source_file").(string)
-	content, err := ioutil.ReadFile(sourceFile)
+func (fds FileDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	diags := req.Config.Get(ctx, &fds)
+	if diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+		return
+	}
+
+	var m map[string]string
+	if diags := fds.Data.ElementsAs(ctx, &m, false); diags.HasError() {
+		resp.Diagnostics.Append(diags...)
+	}
+
+	apiModel := FileDataSourceModel{
+		SourceFile: fds.SourceFile.ValueString(),
+		InputType:  fds.InputType.ValueString(),
+		Raw:        fds.Raw.String(),
+		Data:       m,
+	}
+
+	content, err := os.ReadFile(apiModel.SourceFile)
 	if err != nil {
-		return err
+		resp.Diagnostics.AddError("could not read source file", err.Error())
+		return
 	}
 
 	var format string
-	if input_type := d.Get("input_type").(string); input_type != "" {
-		format = input_type
+	if inputType := apiModel.InputType; inputType != "" {
+		format = inputType
 	} else {
-		switch ext := path.Ext(sourceFile); ext {
+		switch ext := path.Ext(apiModel.SourceFile); ext {
 		case ".json":
 			format = "json"
 		case ".yaml", ".yml":
@@ -59,13 +96,26 @@ func dataSourceFileRead(d *schema.ResourceData, meta interface{}) error {
 		case ".ini":
 			format = "ini"
 		default:
-			return fmt.Errorf("Don't know how to decode file with extension %s, set input_type to json, yaml or raw as appropriate", ext)
+			resp.Diagnostics.AddAttributeError(tfpath.Root("source_file"), "unknown format", fmt.Sprintf("Don't know how to decode file with extension %s, set input_type to json, yaml or raw as appropriate", ext))
+			return
 		}
 	}
 
 	if err := validateInputType(format); err != nil {
-		return err
+		resp.Diagnostics.AddAttributeError(tfpath.Root("input_type"), "unknown format", err.Error())
+		return
 	}
 
-	return readData(content, format, d)
+	if err := readData(content, format, &apiModel); err != nil {
+		resp.Diagnostics.AddError("read fail", err.Error())
+		return
+	}
+
+	fds.Raw = types.StringValue(apiModel.Raw)
+	fds.Data, diags = types.MapValueFrom(ctx, types.StringType, apiModel.Data)
+	fds.SourceFile = types.StringValue(apiModel.SourceFile)
+	fds.InputType = types.StringValue(apiModel.InputType)
+	fds.ID = types.StringValue(apiModel.ID)
+	resp.Diagnostics.Append(diags...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, fds)...)
 }

@@ -1,13 +1,15 @@
 package sops
 
 import (
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	scommon "go.mozilla.org/sops/v3/cmd/sops/common"
+	"github.com/getsops/sops/v3/cmd/sops/common"
+	"github.com/getsops/sops/v3/config"
 )
 
-func GetInputStore(d *schema.ResourceData) scommon.Store {
-	return scommon.DefaultStoreForPathOrFormat(d.Get("filename").(string), "file")
+var defaultStoreConfig = config.NewStoresConfig()
+
+func GetInputStore(filename string) common.Store {
+	return common.DefaultStoreForPathOrFormat(defaultStoreConfig, filename, "file")
 }
-func GetOutputStore(d *schema.ResourceData) scommon.Store {
-	return scommon.DefaultStoreForPathOrFormat(d.Get("filename").(string), "file")
+func GetOutputStore(filename string) common.Store {
+	return common.DefaultStoreForPathOrFormat(defaultStoreConfig, filename, "file")
 }

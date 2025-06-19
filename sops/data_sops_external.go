@@ -1,52 +1,72 @@
 package sops
 
 import (
-	"io/ioutil"
-	"strings"
+	"context"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func dataSourceExternal() *schema.Resource {
-	return &schema.Resource{
-		Read: dataSourceExternalRead,
+type ExternalDataSource struct {
+	ID     types.String `tfsdk:"id"`
+	Source types.String `tfsdk:"source"`
+	Format types.String `tfsdk:"input_type"`
+	Data   types.Map    `tfsdk:"data"`
+	Raw    types.String `tfsdk:"raw"`
+}
 
-		Schema: map[string]*schema.Schema{
-			"input_type": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-			},
-			"source": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-			},
+func (ExternalDataSource) Metadata(_ context.Context, _ datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+	resp.TypeName = "sops_external"
+}
 
-			"data": &schema.Schema{
-				Type:      schema.TypeMap,
-				Computed:  true,
-				Sensitive: true,
+func (e ExternalDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	if ds := req.Config.Get(ctx, &e); ds.HasError() {
+		resp.Diagnostics.Append(ds...)
+		return
+	}
+
+	source := []byte(e.Source.ValueString())
+	format := e.Format.ValueString()
+	if err := validateInputType(format); err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("input_type"), "bad format", err.Error())
+		return
+	}
+
+	var fds FileDataSourceModel
+	if err := readData(source, format, &fds); err != nil {
+		resp.Diagnostics.AddError("failed to read data", err.Error())
+		return
+	}
+
+	e.ID = types.StringValue(fds.ID)
+	e.Raw = types.StringValue(fds.Raw)
+	e.Data, _ = types.MapValueFrom(ctx, types.StringType, fds.Data)
+	resp.Diagnostics.Append(resp.State.Set(ctx, e)...)
+}
+
+func (ExternalDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{
+				Computed: true,
 			},
-			"raw": &schema.Schema{
-				Type:      schema.TypeString,
+			"input_type": schema.StringAttribute{
+				Required: true,
+			},
+			"source": schema.StringAttribute{
+				Required: true,
+			},
+			"data": schema.MapAttribute{
+				Computed:    true,
+				Sensitive:   true,
+				ElementType: types.StringType,
+			},
+			"raw": schema.StringAttribute{
 				Computed:  true,
 				Sensitive: true,
 			},
 		},
 	}
-}
-
-func dataSourceExternalRead(d *schema.ResourceData, meta interface{}) error {
-	source := d.Get("source").(string)
-	content, err := ioutil.ReadAll(strings.NewReader(source))
-	if err != nil {
-		return err
-	}
-
-	format := d.Get("input_type").(string)
-	if err := validateInputType(format); err != nil {
-		return err
-	}
-	return readData(content, format, d)
 }

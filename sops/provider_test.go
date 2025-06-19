@@ -1,26 +1,22 @@
 package sops
 
 import (
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-framework/provider"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov5"
 )
 
-var testAccProviders map[string]*schema.Provider
-var testAccProvider *schema.Provider
+var testAccProviders map[string]func() (tfprotov5.ProviderServer, error)
 
 func init() {
-	testAccProvider = Provider()
-	testAccProviders = map[string]*schema.Provider{
-		"sops": testAccProvider,
-	}
-}
-
-func TestProvider(t *testing.T) {
-	if err := Provider().InternalValidate(); err != nil {
-		t.Fatalf("err: %s", err)
+	var p Provider
+	testAccProviders = map[string]func() (tfprotov5.ProviderServer, error){
+		"sops": providerserver.NewProtocol5WithError(&p),
 	}
 }
 
 func TestProvider_impl(t *testing.T) {
-	var _ *schema.Provider = Provider()
+	var _ provider.Provider = New()
 }
