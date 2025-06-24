@@ -2,10 +2,10 @@ package sops
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 
+	"github.com/getsops/sops/v3/kms"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	tfpath "github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -22,7 +22,6 @@ import (
 	//"github.com/getsops/sops/v3/hcvault"
 	"github.com/getsops/sops/v3/keys"
 	"github.com/getsops/sops/v3/keyservice"
-	"github.com/getsops/sops/v3/kms"
 	"github.com/getsops/sops/v3/version"
 )
 
@@ -124,17 +123,10 @@ func LocalKeySvc() (svcs []keyservice.KeyServiceClient) {
 	return
 }
 
-func KeyGroups(ctx context.Context, fr fileResourceAPIModel, encType string, config *EncryptConfig) ([]mozillasops.KeyGroup, error) {
+func KeyGroups(ctx context.Context, kmsConf KmsConf) ([]mozillasops.KeyGroup, error) {
 	var kmsKeys []keys.MasterKey
-	switch encType {
-	case "kms":
-		if fr.Kms == nil || !fr.Kms.IsConfigured() {
-			return nil, errors.New("kms is not configured")
-		}
-
-		for _, k := range kms.MasterKeysFromArnString(fr.Kms.ARN, nil, fr.Kms.Profile) {
-			kmsKeys = append(kmsKeys, k)
-		}
+	for _, k := range kms.MasterKeysFromArnString(kmsConf.ARN, nil, kmsConf.Profile) {
+		kmsKeys = append(kmsKeys, k)
 	}
 
 	var group mozillasops.KeyGroup

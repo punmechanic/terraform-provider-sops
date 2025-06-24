@@ -28,9 +28,7 @@ func newFileResource() resource.Resource {
 }
 
 type fileResource struct {
-	// ProviderConfig is the default configuration from the Provider for encryption.
-	// This may be a zero value.
-	ProviderConfig EncryptConfig
+	providerKmsConfig KmsConf
 }
 
 type fileResourceModel struct {
@@ -55,12 +53,11 @@ type fileResourceAPIModel struct {
 	FilePermission      string
 	DirectoryPermission string
 	EncryptedRegex      string
-	Kms                 *KmsConf
 }
 
 func (f *fileResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
-	if cfg, ok := req.ProviderData.(EncryptConfig); ok {
-		f.ProviderConfig = cfg
+	if cfg, ok := req.ProviderData.(KmsConf); ok {
+		f.providerKmsConfig = cfg
 	}
 }
 
@@ -197,7 +194,7 @@ func (fileResource) Schema(_ context.Context, _ resource.SchemaRequest, res *res
 				Attributes: map[string]schema.Attribute{
 					"arn": schema.StringAttribute{
 						Description: "The ARN of the KMS key",
-						Required:    true,
+						Optional:    true,
 					},
 					"profile": schema.StringAttribute{
 						Description: "The AWS Profile to use when retrieving the key",
@@ -236,13 +233,22 @@ func (f fileResource) Create(ctx context.Context, req resource.CreateRequest, re
 		EncryptedRegex:      tfm.EncryptedRegex.ValueString(),
 	}
 
+	kmsConf := f.providerKmsConfig
 	if !tfm.Kms.IsNull() {
-		var kmsConf KmsConf
 		if ds := unmarshalKmsConf(ctx, tfm.Kms, &kmsConf); ds.HasError() {
 			resp.Diagnostics.Append(ds...)
 			return
 		}
-		model.Kms = &kmsConf
+	}
+
+	// If Kms is still unconfigured, bail.
+	if kmsConf.ARN == "" {
+		resp.Diagnostics.AddAttributeError(
+			tfpath.Root("kms"),
+			"kms is unconfigured",
+			"kms attribute must be supplied if not configured on the provider",
+		)
+		return
 	}
 
 	content, err := resourceLocalFileContent(model)
@@ -251,7 +257,7 @@ func (f fileResource) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 
-	content, err = sopsEncrypt(ctx, model, content, &f.ProviderConfig)
+	content, err = sopsEncrypt(ctx, kmsConf, model, content)
 	if err != nil {
 		resp.Diagnostics.AddError("failed to encrypt", err.Error())
 		return
@@ -294,10 +300,10 @@ func resourceLocalFileContent(f fileResourceAPIModel) ([]byte, error) {
 	return []byte(f.Content), nil
 }
 
-func sopsEncrypt(ctx context.Context, fr fileResourceAPIModel, content []byte, config *EncryptConfig) ([]byte, error) {
+func sopsEncrypt(ctx context.Context, config KmsConf, fr fileResourceAPIModel, content []byte) ([]byte, error) {
 	inputStore := GetInputStore(fr.Filename)
 	outputStore := GetOutputStore(fr.Filename)
-	groups, err := KeyGroups(ctx, fr, "kms", config)
+	groups, err := KeyGroups(ctx, config)
 	if err != nil {
 		return nil, err
 	}
