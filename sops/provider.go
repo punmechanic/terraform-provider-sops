@@ -36,5 +36,7 @@ func (p *SopsProvider) DataSources(_ context.Context) []func() datasource.DataSo
 }
 
 func (p *SopsProvider) Resources(_ context.Context) []func() resource.Resource {
-	return nil
+	return []func() resource.Resource{
+		newFileResource,
+	}
 }
