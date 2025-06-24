@@ -8,7 +8,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 )
 
 var _ provider.Provider = &SopsProvider{}
@@ -38,6 +37,14 @@ func (p *SopsProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 					},
 				},
 			},
+			"pgp": schema.SingleNestedBlock{
+				Attributes: map[string]schema.Attribute{
+					"fingerprint": schema.StringAttribute{
+						Description: "The Fingerprint of the PGP key",
+						Optional:    true,
+					},
+				},
+			},
 		},
 	}
 }
@@ -46,23 +53,33 @@ func (p *SopsProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	// TODO: Hacky.
 	var encryptConfig struct {
 		Kms types.Object `tfsdk:"kms"`
+		Pgp types.Object `tfsdk:"pgp"`
 	}
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &encryptConfig)...)
-	if resp.Diagnostics.HasError() || encryptConfig.Kms.IsNull() {
-		return
-	}
-
-	var kmsConfig kmsConfigSchema
-	resp.Diagnostics.Append(encryptConfig.Kms.As(ctx, &kmsConfig, basetypes.ObjectAsOptions{})...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	resp.ResourceData = KmsConf{
-		ARN:     kmsConfig.ARN.ValueString(),
-		Profile: kmsConfig.Profile.ValueString(),
+	var conf encryptConfigModel
+	// TODO Only allow one of kms or pgp to be defined
+	if !encryptConfig.Kms.IsNull() {
+		if ds := unmarshalKmsConf(ctx, encryptConfig.Kms, &conf.Kms); ds.HasError() {
+			resp.Diagnostics.Append(ds...)
+			return
+		}
+		conf.EncryptionProvider = "kms"
 	}
+
+	if !encryptConfig.Pgp.IsNull() {
+		if ds := unmarshalPgpConf(ctx, encryptConfig.Pgp, &conf.Pgp); ds.HasError() {
+			resp.Diagnostics.Append(ds...)
+			return
+		}
+		conf.EncryptionProvider = "pgp"
+	}
+
+	resp.ResourceData = conf
 }
 
 func (p *SopsProvider) DataSources(_ context.Context) []func() datasource.DataSource {

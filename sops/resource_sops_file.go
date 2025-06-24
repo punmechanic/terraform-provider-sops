@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 
 	"github.com/getsops/sops/v3/aes"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -28,7 +29,7 @@ func newFileResource() resource.Resource {
 }
 
 type fileResource struct {
-	providerKmsConfig KmsConf
+	rootEncryptConfig encryptConfigModel
 }
 
 type fileResourceModel struct {
@@ -41,7 +42,9 @@ type fileResourceModel struct {
 	DirectoryPermission types.String `tfsdk:"directory_permission"`
 	Filename            types.String `tfsdk:"filename"`
 	EncryptedRegex      types.String `tfsdk:"encrypted_regex"`
-	Kms                 types.Object `tfsdk:"kms"`
+
+	Kms types.Object `tfsdk:"kms"`
+	Pgp types.Object `tfsdk:"pgp"`
 }
 
 type fileResourceAPIModel struct {
@@ -53,12 +56,11 @@ type fileResourceAPIModel struct {
 	FilePermission      string
 	DirectoryPermission string
 	EncryptedRegex      string
+	EncryptConfig       encryptConfigModel
 }
 
 func (f *fileResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
-	if cfg, ok := req.ProviderData.(KmsConf); ok {
-		f.providerKmsConfig = cfg
-	}
+	f.rootEncryptConfig, _ = req.ProviderData.(encryptConfigModel)
 }
 
 func (fileResource) Delete(ctx context.Context, req resource.DeleteRequest, res *resource.DeleteResponse) {
@@ -207,6 +209,14 @@ func (fileResource) Schema(_ context.Context, _ resource.SchemaRequest, res *res
 					objectplanmodifier.RequiresReplace(),
 				},
 			},
+			"pgp": schema.SingleNestedBlock{
+				Attributes: map[string]schema.Attribute{
+					"fingerprint": schema.StringAttribute{
+						Description: "The Fingerprint of the PGP key",
+						Optional:    true,
+					},
+				},
+			},
 		},
 	}
 }
@@ -231,22 +241,34 @@ func (f fileResource) Create(ctx context.Context, req resource.CreateRequest, re
 		Content:             tfm.Content.ValueString(),
 		Source:              tfm.Source.ValueString(),
 		EncryptedRegex:      tfm.EncryptedRegex.ValueString(),
+		EncryptConfig:       f.rootEncryptConfig,
 	}
 
-	kmsConf := f.providerKmsConfig
+	// TODO Only allow one of kms or pgp to be defined
 	if !tfm.Kms.IsNull() {
-		if ds := unmarshalKmsConf(ctx, tfm.Kms, &kmsConf); ds.HasError() {
+		if ds := unmarshalKmsConf(ctx, tfm.Kms, &model.EncryptConfig.Kms); ds.HasError() {
 			resp.Diagnostics.Append(ds...)
 			return
 		}
+		model.EncryptConfig.EncryptionProvider = "kms"
+	}
+
+	if !tfm.Pgp.IsNull() {
+		if ds := unmarshalPgpConf(ctx, tfm.Pgp, &model.EncryptConfig.Pgp); ds.HasError() {
+			resp.Diagnostics.Append(ds...)
+			return
+		}
+		model.EncryptConfig.EncryptionProvider = "pgp"
 	}
 
 	// If Kms is still unconfigured, bail.
-	if kmsConf.ARN == "" {
-		resp.Diagnostics.AddAttributeError(
-			tfpath.Root("kms"),
-			"kms is unconfigured",
-			"kms attribute must be supplied if not configured on the provider",
+	if model.EncryptConfig.EncryptionProvider == "" {
+		resp.Diagnostics.AddError(
+			"encryption is unconfigured",
+			fmt.Sprintf(
+				"an encryption provider (%s) must be specified on the resource if not provided on the provider",
+				strings.Join([]string{"kms", "pgp"}, " "),
+			),
 		)
 		return
 	}
@@ -257,7 +279,7 @@ func (f fileResource) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 
-	content, err = sopsEncrypt(ctx, kmsConf, model, content)
+	content, err = sopsEncrypt(ctx, model, content)
 	if err != nil {
 		resp.Diagnostics.AddError("failed to encrypt", err.Error())
 		return
@@ -300,10 +322,10 @@ func resourceLocalFileContent(f fileResourceAPIModel) ([]byte, error) {
 	return []byte(f.Content), nil
 }
 
-func sopsEncrypt(ctx context.Context, config KmsConf, fr fileResourceAPIModel, content []byte) ([]byte, error) {
+func sopsEncrypt(ctx context.Context, fr fileResourceAPIModel, content []byte) ([]byte, error) {
 	inputStore := GetInputStore(fr.Filename)
 	outputStore := GetOutputStore(fr.Filename)
-	groups, err := KeyGroups(ctx, config)
+	groups, err := KeyGroups(ctx, fr.EncryptConfig)
 	if err != nil {
 		return nil, err
 	}

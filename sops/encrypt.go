@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/getsops/sops/v3/kms"
+	"github.com/getsops/sops/v3/pgp"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	tfpath "github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -20,7 +21,7 @@ import (
 	"github.com/getsops/sops/v3/cmd/sops/common"
 
 	//"github.com/getsops/sops/v3/hcvault"
-	"github.com/getsops/sops/v3/keys"
+
 	"github.com/getsops/sops/v3/keyservice"
 	"github.com/getsops/sops/v3/version"
 )
@@ -123,15 +124,29 @@ func LocalKeySvc() (svcs []keyservice.KeyServiceClient) {
 	return
 }
 
-func KeyGroups(ctx context.Context, kmsConf KmsConf) ([]mozillasops.KeyGroup, error) {
-	var kmsKeys []keys.MasterKey
-	for _, k := range kms.MasterKeysFromArnString(kmsConf.ARN, nil, kmsConf.Profile) {
-		kmsKeys = append(kmsKeys, k)
+func KeyGroups(ctx context.Context, cfg encryptConfigModel) ([]mozillasops.KeyGroup, error) {
+	var group mozillasops.KeyGroup
+	switch cfg.EncryptionProvider {
+	case "kms":
+		for _, k := range kms.MasterKeysFromArnString(cfg.Kms.ARN, nil, cfg.Kms.Profile) {
+			group = append(group, k)
+		}
+	case "pgp":
+		for _, k := range pgp.MasterKeysFromFingerprintString(cfg.Pgp.Fingerprint) {
+			group = append(group, k)
+		}
+	default:
+		return nil, fmt.Errorf("unknown encryption provider %q", cfg.EncryptionProvider)
 	}
 
-	var group mozillasops.KeyGroup
-	group = append(group, kmsKeys...)
 	return []mozillasops.KeyGroup{group}, nil
+}
+
+type encryptConfigModel struct {
+	Kms KmsConf
+	Pgp PgpConf
+
+	EncryptionProvider string
 }
 
 type kmsConfigSchema struct {
@@ -166,5 +181,34 @@ func unmarshalKmsConf(ctx context.Context, m types.Object, conf *KmsConf) diag.D
 	conf.ARN = tfSchema.ARN.ValueString()
 	// Profile is an optional value and is permitted to be an empty string if not specified.
 	conf.Profile = tfSchema.Profile.ValueString()
+	return ds
+}
+
+type pgpConfigSchema struct {
+	Fingerprint types.String `tfsdk:"fingerprint"`
+}
+
+func unmarshalPgpConf(ctx context.Context, m types.Object, conf *PgpConf) diag.Diagnostics {
+	var (
+		ds       diag.Diagnostics
+		tfSchema pgpConfigSchema
+	)
+
+	if m.IsNull() {
+		// KMS is not configured
+		return ds
+	}
+
+	if diags := m.As(ctx, &tfSchema, basetypes.ObjectAsOptions{}); diags.HasError() {
+		ds.Append(diags...)
+		return ds
+	}
+
+	if tfSchema.Fingerprint.IsNull() {
+		ds.AddAttributeError(tfpath.Root("fingerprint"), "fingerprint is not set", "fingerprint is not set")
+		return ds
+	}
+
+	conf.Fingerprint = tfSchema.Fingerprint.ValueString()
 	return ds
 }

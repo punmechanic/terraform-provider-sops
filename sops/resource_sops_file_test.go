@@ -13,8 +13,8 @@ const configTestResourceSopsFile_emptyContentYaml = `
 resource "sops_file" "x" {
   content  = ""
   filename = "access-keys.yml"
-  kms {
-	arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+  pgp {
+	fingerprint = "3CE5CC7219D6597CE6488BF1BF36CD3D0749A11A"
   }
 }`
 
@@ -36,8 +36,8 @@ func TestResourceSopsFile_ReturnsCouldNotReadInputFileIfYmlFileIsEmpty(t *testin
 
 const configTestResourceSopsFile_withProviderConfig = `
 provider "sops" {
-  kms {
-	arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+  pgp {
+	fingerprint = "3CE5CC7219D6597CE6488BF1BF36CD3D0749A11A"
   }
 }
 
@@ -50,8 +50,8 @@ const configTestResourceSopsFile_withResourceConfig = `
 resource "sops_file" "x" {
   source        = "%s/test-fixtures/basic-encrypt.yaml"
   filename      = "access-keys.yml"
-  kms {
-	arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+  pgp {
+	fingerprint = "3CE5CC7219D6597CE6488BF1BF36CD3D0749A11A"
   }
 }`
 
